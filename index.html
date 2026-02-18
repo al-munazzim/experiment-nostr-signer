@@ -216,7 +216,7 @@ function cleanup46() {
 }
 
 function makeReq(method, params) {
-  return { id: crypto.randomUUID(), method, params };
+  return { id: Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''), method, params };
 }
 
 async function sendNip46(request) {
