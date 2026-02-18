@@ -145,6 +145,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
       <option value="nip04">NIP-04 (legacy)</option>
       <option value="nip44">NIP-44 (recommended)</option>
     </select>
+    <label>Request Timeout</label>
+    <select id="nip46-timeout">
+      <option value="30000">30 seconds</option>
+      <option value="300000">5 minutes</option>
+      <option value="18000000">5 hours</option>
+    </select>
   </div>
 
   <label>Recipient Public Key (hex or npub)</label>
@@ -245,7 +251,9 @@ async function sendNip46(request) {
   }, s.sk);
 
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { delete s.pending[request.id]; reject(new Error('NIP-46 request timed out (30s)')); }, 30000);
+    const timeoutMs = parseInt($('#nip46-timeout')?.value || '30000');
+    const timeoutLabel = timeoutMs < 60000 ? (timeoutMs/1000)+'s' : timeoutMs < 3600000 ? (timeoutMs/60000)+'min' : (timeoutMs/3600000)+'h';
+    const timeout = setTimeout(() => { delete s.pending[request.id]; reject(new Error('NIP-46 request timed out (' + timeoutLabel + ')')); }, timeoutMs);
     s.pending[request.id] = { resolve, reject, timeout };
     s.ws.send(JSON.stringify(['EVENT', event]));
   });
