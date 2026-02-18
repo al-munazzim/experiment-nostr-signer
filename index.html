@@ -73,8 +73,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     <strong>No NIP-04 signer detected.</strong><br>
     Install a NIP-07 extension like <a href="https://getalby.com">Alby</a> or <a href="https://github.com/nicehash/nos2x">nos2x</a>.
   </div>
-  <label>Recipient Public Key (hex)</label>
-  <input class="pubkey-input" data-mode="nip04" placeholder="64-char hex pubkey of the other party">
+  <label>Recipient Public Key (hex or npub)</label>
+  <input class="pubkey-input" data-mode="nip04" placeholder="hex pubkey or npub of the other party">
   <label>Plaintext</label>
   <textarea class="plain-input" data-mode="nip04" placeholder="Message to encrypt..."></textarea>
   <div class="buttons">
@@ -92,8 +92,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     <strong>No NIP-44 signer detected.</strong><br>
     Install a NIP-07 extension with NIP-44 support.
   </div>
-  <label>Recipient Public Key (hex)</label>
-  <input class="pubkey-input" data-mode="nip44" placeholder="64-char hex pubkey of the other party">
+  <label>Recipient Public Key (hex or npub)</label>
+  <input class="pubkey-input" data-mode="nip44" placeholder="hex pubkey or npub of the other party">
   <label>Plaintext</label>
   <textarea class="plain-input" data-mode="nip44" placeholder="Message to encrypt..."></textarea>
   <div class="buttons">
@@ -147,8 +147,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     </select>
   </div>
 
-  <label>Recipient Public Key (hex)</label>
-  <input class="pubkey-input" data-mode="nip46" placeholder="64-char hex pubkey of the other party">
+  <label>Recipient Public Key (hex or npub)</label>
+  <input class="pubkey-input" data-mode="nip46" placeholder="hex pubkey or npub of the other party">
   <label>Plaintext</label>
   <textarea class="plain-input" data-mode="nip46" placeholder="Message to encrypt..."></textarea>
   <div class="buttons">
@@ -164,6 +164,16 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 import { generateSecretKey, getPublicKey, finalizeEvent } from 'https://esm.sh/nostr-tools@2.10.4/pure';
 import { encrypt as nip44encrypt, decrypt as nip44decrypt, getConversationKey } from 'https://esm.sh/nostr-tools@2.10.4/nip44';
 import { bytesToHex, hexToBytes } from 'https://esm.sh/@noble/hashes@1.6.1/utils';
+import { decode as nip19decode } from 'https://esm.sh/nostr-tools@2.10.4/nip19';
+
+function resolveHexPubkey(input) {
+  input = input.trim();
+  if (input.startsWith('npub1')) {
+    try { return nip19decode(input).data; } catch(e) { throw new Error('Invalid npub: ' + e.message); }
+  }
+  if (/^[0-9a-f]{64}$/i.test(input)) return input;
+  throw new Error('Enter a 64-char hex pubkey or npub');
+}
 
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
@@ -418,9 +428,11 @@ $('#disconnectClientBtn').addEventListener('click', cleanup46);
 
 // ─── Encrypt / Decrypt ───
 async function doEncrypt(mode) {
-  const pk = $(`.pubkey-input[data-mode="${mode}"]`).value.trim();
+  const rawPk = $(`.pubkey-input[data-mode="${mode}"]`).value.trim();
   const pt = $(`.plain-input[data-mode="${mode}"]`).value;
-  if (!pk || !pt) { statusFor(mode, 'Provide pubkey and plaintext.', 'error'); return; }
+  if (!rawPk || !pt) { statusFor(mode, 'Provide pubkey and plaintext.', 'error'); return; }
+  let pk;
+  try { pk = resolveHexPubkey(rawPk); } catch(e) { statusFor(mode, e.message, 'error'); return; }
 
   try {
     let ct;
@@ -439,9 +451,11 @@ async function doEncrypt(mode) {
 }
 
 async function doDecrypt(mode) {
-  const pk = $(`.pubkey-input[data-mode="${mode}"]`).value.trim();
+  const rawPk = $(`.pubkey-input[data-mode="${mode}"]`).value.trim();
   const ct = $(`.cipher-input[data-mode="${mode}"]`).value.trim();
-  if (!pk || !ct) { statusFor(mode, 'Provide pubkey and ciphertext.', 'error'); return; }
+  if (!rawPk || !ct) { statusFor(mode, 'Provide pubkey and ciphertext.', 'error'); return; }
+  let pk;
+  try { pk = resolveHexPubkey(rawPk); } catch(e) { statusFor(mode, e.message, 'error'); return; }
 
   try {
     let pt;
