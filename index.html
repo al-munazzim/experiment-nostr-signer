@@ -26,7 +26,13 @@ button:hover { opacity: .85; }
 </head>
 <body>
 <h1>🔐 NIP-07 Encrypt / Decrypt</h1>
-<p class="sub">NIP-04 encryption &amp; decryption via your browser signer extension.</p>
+<p class="sub">Encrypt &amp; decrypt via your browser signer extension.</p>
+
+<label for="nip-select">Encryption Protocol</label>
+<select id="nip-select" style="width:100%;padding:.5rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem;margin-bottom:.5rem;">
+  <option value="nip04">NIP-04 (AES-256-CBC, legacy)</option>
+  <option value="nip44">NIP-44 (XChaCha20, recommended)</option>
+</select>
 <div id="nostr-warning" style="display:none">
   <strong>No NIP-07 signer detected.</strong><br>
   Install a browser extension like <a href="https://github.com/nicehash/nos2x">nos2x</a>, <a href="https://getalby.com">Alby</a>, or another NIP-07 compatible signer.
@@ -57,30 +63,46 @@ function status(msg, cls) {
   el.className = cls;
 }
 
-// Detect NIP-07
+function getProtocol() {
+  const nip = $('nip-select').value;
+  if (nip === 'nip44') {
+    if (!window.nostr || !window.nostr.nip44) return null;
+    return window.nostr.nip44;
+  }
+  if (!window.nostr || !window.nostr.nip04) return null;
+  return window.nostr.nip04;
+}
+
 function checkNostr() {
-  if (!window.nostr || !window.nostr.nip04) {
+  const proto = getProtocol();
+  if (!proto) {
+    const nip = $('nip-select').value.toUpperCase();
     $('nostr-warning').style.display = 'block';
+    $('nostr-warning').innerHTML = '<strong>No ' + nip + ' signer detected.</strong><br>Install a NIP-07 extension like <a href="https://github.com/nicehash/nos2x">nos2x</a> or <a href="https://getalby.com">Alby</a>. Make sure it supports ' + nip + '.';
     $('encryptBtn').disabled = true;
     $('decryptBtn').disabled = true;
     return false;
   }
+  $('nostr-warning').style.display = 'none';
+  $('encryptBtn').disabled = false;
+  $('decryptBtn').disabled = false;
   return true;
 }
 
-// Check after a short delay (extensions inject async)
 setTimeout(checkNostr, 500);
+$('nip-select').addEventListener('change', checkNostr);
 
 $('encryptBtn').addEventListener('click', async () => {
   if (!checkNostr()) return;
+  const proto = getProtocol();
   const pubkey = $('pubkey').value.trim();
   const plaintext = $('plaintext').value;
   if (!pubkey || !plaintext) { status('Provide pubkey and plaintext.', 'error'); return; }
   try {
-    status('Encrypting…', 'ok');
-    const ct = await window.nostr.nip04.encrypt(pubkey, plaintext);
+    status('Encrypting via ' + $('nip-select').value.toUpperCase() + '…', 'ok');
+    const ct = await proto.encrypt(pubkey, plaintext);
     $('ciphertext').value = ct;
-    status('Encrypted OK.', 'ok');
+    status('Encrypted OK (' + $('nip-select').value.toUpperCase() + ').', 'ok');
   } catch (e) {
     status('Encrypt failed: ' + e.message, 'error');
   }
@@ -88,14 +110,15 @@ $('encryptBtn').addEventListener('click', async () => {
 
 $('decryptBtn').addEventListener('click', async () => {
   if (!checkNostr()) return;
+  const proto = getProtocol();
   const pubkey = $('pubkey').value.trim();
   const ciphertext = $('ciphertext').value.trim();
   if (!pubkey || !ciphertext) { status('Provide pubkey and ciphertext.', 'error'); return; }
   try {
-    status('Decrypting…', 'ok');
-    const pt = await window.nostr.nip04.decrypt(pubkey, ciphertext);
+    status('Decrypting via ' + $('nip-select').value.toUpperCase() + '…', 'ok');
+    const pt = await proto.decrypt(pubkey, ciphertext);
     $('plaintext').value = pt;
-    status('Decrypted OK.', 'ok');
+    status('Decrypted OK (' + $('nip-select').value.toUpperCase() + ').', 'ok');
   } catch (e) {
     status('Decrypt failed: ' + e.message, 'error');
   }
