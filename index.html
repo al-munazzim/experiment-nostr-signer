@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIP-07 Encrypt / Decrypt POC</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; background: #fafafa; }
+h1 { font-size: 1.4rem; margin-bottom: .5rem; }
+p.sub { color: #666; margin-bottom: 1.5rem; font-size: .9rem; }
+label { display: block; font-weight: 600; margin: 1rem 0 .3rem; font-size: .85rem; }
+input, textarea { width: 100%; padding: .5rem; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: .85rem; }
+textarea { height: 100px; resize: vertical; }
+.buttons { display: flex; gap: .5rem; margin: 1rem 0; }
+button { padding: .5rem 1.2rem; border: none; border-radius: 4px; cursor: pointer; font-size: .9rem; font-weight: 600; }
+#encryptBtn { background: #4a90d9; color: #fff; }
+#decryptBtn { background: #5cb85c; color: #fff; }
+button:hover { opacity: .85; }
+#status { margin-top: 1rem; padding: .6rem; border-radius: 4px; font-size: .85rem; display: none; }
+#status.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
+#status.ok { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
+#status.warn { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
+#nostr-warning { background: #fdd; color: #a00; border: 1px solid #e99; padding: .8rem; border-radius: 4px; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<h1>🔐 NIP-07 Encrypt / Decrypt</h1>
+<p class="sub">NIP-04 encryption &amp; decryption via your browser signer extension.</p>
+<div id="nostr-warning" style="display:none">
+  <strong>No NIP-07 signer detected.</strong><br>
+  Install a browser extension like <a href="https://github.com/nicehash/nos2x">nos2x</a>, <a href="https://getalby.com">Alby</a>, or another NIP-07 compatible signer.
+</div>
+
+<label for="pubkey">Recipient Public Key (hex)</label>
+<input id="pubkey" type="text" placeholder="64-char hex pubkey of the other party">
+
+<label for="plaintext">Plaintext</label>
+<textarea id="plaintext" placeholder="Message to encrypt..."></textarea>
+
+<div class="buttons">
+  <button id="encryptBtn">Encrypt ↓</button>
+  <button id="decryptBtn">Decrypt ↑</button>
+</div>
+
+<label for="ciphertext">Ciphertext</label>
+<textarea id="ciphertext" placeholder="Encrypted payload appears here..."></textarea>
+
+<div id="status"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function status(msg, cls) {
+  const el = $('status');
+  el.textContent = msg;
+  el.className = cls;
+}
+
+// Detect NIP-07
+function checkNostr() {
+  if (!window.nostr || !window.nostr.nip04) {
+    $('nostr-warning').style.display = 'block';
+    $('encryptBtn').disabled = true;
+    $('decryptBtn').disabled = true;
+    return false;
+  }
+  return true;
+}
+
+// Check after a short delay (extensions inject async)
+setTimeout(checkNostr, 500);
+
+$('encryptBtn').addEventListener('click', async () => {
+  if (!checkNostr()) return;
+  const pubkey = $('pubkey').value.trim();
+  const plaintext = $('plaintext').value;
+  if (!pubkey || !plaintext) { status('Provide pubkey and plaintext.', 'error'); return; }
+  try {
+    status('Encrypting…', 'ok');
+    const ct = await window.nostr.nip04.encrypt(pubkey, plaintext);
+    $('ciphertext').value = ct;
+    status('Encrypted OK.', 'ok');
+  } catch (e) {
+    status('Encrypt failed: ' + e.message, 'error');
+  }
+});
+
+$('decryptBtn').addEventListener('click', async () => {
+  if (!checkNostr()) return;
+  const pubkey = $('pubkey').value.trim();
+  const ciphertext = $('ciphertext').value.trim();
+  if (!pubkey || !ciphertext) { status('Provide pubkey and ciphertext.', 'error'); return; }
+  try {
+    status('Decrypting…', 'ok');
+    const pt = await window.nostr.nip04.decrypt(pubkey, ciphertext);
+    $('plaintext').value = pt;
+    status('Decrypted OK.', 'ok');
+  } catch (e) {
+    status('Decrypt failed: ' + e.message, 'error');
+  }
+});
+</script>
+</body>
+</html>
