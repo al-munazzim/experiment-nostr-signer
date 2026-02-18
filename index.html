@@ -129,6 +129,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
     <button class="btn-disconnect hidden" id="disconnectClientBtn" style="margin-top:.4rem">Disconnect</button>
     <div id="nostrconnect-display" class="hidden">
       <label>Scan or paste this URI in your signer (e.g. <a href="https://github.com/greenart7c3/Amber/releases" target="_blank" style="color:#4a90d9">Amber for Android</a>):</label>
+      <details style="margin:.5rem 0;font-size:.8rem;color:#888">
+        <summary style="cursor:pointer;color:#4a90d9">How it looks in Amber →</summary>
+        <img src="amber-screenshot.jpg" alt="Amber app screenshot showing Paste from clipboard, Scan a QR Code, and permission approval options" style="max-width:100%;border-radius:6px;margin-top:.4rem;border:1px solid #333">
+      </details>
       <div class="uri-display" id="nostrconnect-uri"></div>
       <div class="qr-box" id="nostrconnect-qr"></div>
     </div>
