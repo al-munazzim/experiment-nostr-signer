@@ -51,6 +51,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 .warning-box { background: #fdd; color: #a00; border: 1px solid #e99; padding: .7rem; border-radius: 4px; margin-bottom: .8rem; font-size: .85rem; }
 .hidden { display: none !important; }
+
+/* Connection Panel */
+.conn-panel { background: #f7f7f7; border: 1px solid #ddd; border-radius: 6px; padding: .8rem; margin-bottom: 1rem; font-size: .82rem; }
+.conn-panel .cp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; }
+.conn-panel .cp-header .cp-state { font-weight: 700; }
+.conn-panel .cp-state.st-connected { color: #060; }
+.conn-panel .cp-state.st-disconnected { color: #a00; }
+.conn-panel .cp-state.st-reconnecting { color: #855; }
+.conn-panel .cp-row { margin: .25rem 0; color: #444; }
+.conn-panel .cp-row span { font-family: monospace; user-select: all; }
+.conn-panel .cp-actions { display: flex; gap: .4rem; margin-top: .6rem; }
+.conn-panel .cp-actions button { font-size: .78rem; padding: .3rem .7rem; }
+.btn-reconnect { background: #e67e22; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.btn-forget { background: #c0392b; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+.btn-copy-sm { background: #888; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-size: .72rem; padding: .15rem .4rem; margin-left: .3rem; }
 .qr-box { text-align: center; margin: .8rem 0; }
 .qr-box canvas, .qr-box img { max-width: 220px; }
 .uri-display { word-break: break-all; font-size: .78rem; background: #f0f0f0; padding: .5rem; border-radius: 4px; margin: .5rem 0; font-family: monospace; user-select: all; }
@@ -107,6 +122,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 <!-- NIP-46 Tab -->
 <div class="tab-panel" id="panel-nip46">
+  <!-- Connection Panel (shown when connected or has stored session) -->
+  <div class="conn-panel hidden" id="nip46-panel">
+    <div class="cp-header">
+      <span class="cp-state" id="cp-state">●  Disconnected</span>
+      <span style="font-size:.75rem;color:#888" id="cp-flow"></span>
+    </div>
+    <div class="cp-row">Signer: <span id="cp-pubkey"></span><button class="btn-copy-sm" id="cp-copy-pk" title="Copy full pubkey">📋</button></div>
+    <div class="cp-row">Relay: <span id="cp-relay"></span></div>
+    <div class="cp-row" id="cp-since-row">Since: <span id="cp-since"></span></div>
+    <div class="cp-actions">
+      <button class="btn-reconnect hidden" id="cp-reconnect">Reconnect</button>
+      <button class="btn-forget" id="cp-forget">Disconnect &amp; Forget</button>
+    </div>
+  </div>
+
   <div class="flow-tabs">
     <div class="flow-btn active" data-flow="bunker">Signer-initiated (bunker://)</div>
     <div class="flow-btn" data-flow="client">Client-initiated (nostrconnect://)</div>
@@ -220,7 +250,82 @@ function connStatusEl(id, msg, cls) {
 }
 
 // ─── NIP-46 State ───
-let nip46 = null; // { sk, pk, remotePubkey, ws, connected, pending, flow }
+let nip46 = null; // { sk, pk, remotePubkey, ws, connected, pending, flow, relay, connectedAt }
+
+const SESSION_KEY = 'nip46-session';
+
+function saveSession() {
+  if (!nip46 || !nip46.connected || !nip46.remotePubkey) return;
+  const data = {
+    clientSecretKey: bytesToHex(nip46.sk),
+    clientPubkey: nip46.pk,
+    remotePubkey: nip46.remotePubkey,
+    relay: nip46.relay,
+    flow: nip46.flow,
+    connectedAt: nip46.connectedAt || new Date().toISOString()
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+}
+
+function loadSession() {
+  try { const d = localStorage.getItem(SESSION_KEY); return d ? JSON.parse(d) : null; } catch { return null; }
+}
+
+function clearSession() { localStorage.removeItem(SESSION_KEY); }
+
+function updateConnPanel() {
+  const panel = $('#nip46-panel');
+  const sess = loadSession();
+  if (!nip46 && !sess) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  const connected = nip46?.connected;
+  const reconnecting = nip46 && !nip46.connected && nip46.remotePubkey;
+  const stateEl = $('#cp-state');
+  const reconnBtn = $('#cp-reconnect');
+
+  if (connected) {
+    stateEl.textContent = '● Connected'; stateEl.className = 'cp-state st-connected';
+    reconnBtn.classList.add('hidden');
+  } else if (reconnecting) {
+    stateEl.textContent = '● Reconnecting…'; stateEl.className = 'cp-state st-reconnecting';
+    reconnBtn.classList.add('hidden');
+  } else {
+    stateEl.textContent = '● Disconnected'; stateEl.className = 'cp-state st-disconnected';
+    reconnBtn.classList.remove('hidden');
+  }
+
+  const rpk = nip46?.remotePubkey || sess?.remotePubkey || '';
+  const relay = nip46?.relay || sess?.relay || '';
+  const flow = nip46?.flow || sess?.flow || '';
+  const since = nip46?.connectedAt || sess?.connectedAt || '';
+
+  $('#cp-pubkey').textContent = rpk ? rpk.slice(0, 8) + '…' + rpk.slice(-8) : '?';
+  $('#cp-pubkey').dataset.full = rpk;
+  $('#cp-relay').textContent = relay;
+  $('#cp-flow').textContent = flow === 'bunker' ? 'bunker://' : flow === 'client' ? 'nostrconnect://' : '';
+  if (since) {
+    $('#cp-since').textContent = new Date(since).toLocaleString();
+    $('#cp-since-row').style.display = '';
+  } else {
+    $('#cp-since-row').style.display = 'none';
+  }
+}
+
+function autoFillRecipient() {
+  if (nip46?.remotePubkey) {
+    const inp = $(`.pubkey-input[data-mode="nip46"]`);
+    if (inp && !inp.value.trim()) inp.value = nip46.remotePubkey;
+  }
+}
+
+function onNip46Connected() {
+  nip46.connectedAt = nip46.connectedAt || new Date().toISOString();
+  saveSession();
+  updateConnPanel();
+  autoFillRecipient();
+  updateUI();
+}
 
 function cleanup46() {
   if (nip46) {
@@ -232,7 +337,14 @@ function cleanup46() {
   $('#disconnectBunkerBtn').classList.add('hidden');
   $('#disconnectClientBtn').classList.add('hidden');
   $('#nostrconnect-display').classList.add('hidden');
+  updateConnPanel();
   updateUI();
+}
+
+function forgetSession() {
+  cleanup46();
+  clearSession();
+  updateConnPanel();
 }
 
 function makeReq(method, params) {
@@ -297,7 +409,7 @@ function connectBunker() {
 
     connStatusEl(connId, 'Connecting to ' + relay + '…', 'connecting');
     const ws = new WebSocket(relay);
-    nip46 = { sk, pk, remotePubkey, ws, connected: false, pending: {}, flow: 'bunker' };
+    nip46 = { sk, pk, remotePubkey, ws, connected: false, pending: {}, flow: 'bunker', relay };
 
     ws.onopen = () => {
       ws.send(JSON.stringify(['REQ', 'nip46', { kinds: [24133], '#p': [pk], since: Math.floor(Date.now() / 1000) - 5 }]));
@@ -308,7 +420,7 @@ function connectBunker() {
         if (nip46?.pending[req.id]) { delete nip46.pending[req.id]; connStatusEl(connId, 'Connect timed out', 'error'); }
       }, 30000);
       nip46.pending[req.id] = {
-        resolve: () => { clearTimeout(timeout); nip46.connected = true; connStatusEl(connId, 'Connected ✓', 'connected'); $('#disconnectBunkerBtn').classList.remove('hidden'); updateUI(); },
+        resolve: () => { clearTimeout(timeout); nip46.connected = true; connStatusEl(connId, 'Connected ✓', 'connected'); $('#disconnectBunkerBtn').classList.remove('hidden'); onNip46Connected(); },
         reject: (e) => { clearTimeout(timeout); connStatusEl(connId, 'Rejected: ' + e.message, 'error'); },
         timeout
       };
@@ -358,7 +470,7 @@ function generateNostrConnect() {
   connStatusEl(connId, 'Waiting for signer to connect…', 'connecting');
 
   const ws = new WebSocket(relay);
-  nip46 = { sk, pk, remotePubkey: null, ws, connected: false, pending: {}, flow: 'client', secret };
+  nip46 = { sk, pk, remotePubkey: null, ws, connected: false, pending: {}, flow: 'client', secret, relay };
 
   ws.onopen = () => {
     ws.send(JSON.stringify(['REQ', 'nip46', { kinds: [24133], '#p': [pk], since: Math.floor(Date.now() / 1000) - 5 }]));
@@ -390,7 +502,7 @@ function generateNostrConnect() {
             nip46.connected = true;
             connStatusEl(connId, 'Connected to signer ✓ (pubkey: ' + evt.pubkey.slice(0, 12) + '…)', 'connected');
             $('#disconnectClientBtn').classList.remove('hidden');
-            updateUI();
+            onNip46Connected();
             return;
           }
         } catch {}
@@ -483,6 +595,93 @@ async function doDecrypt(mode) {
 
 $$('.btn-encrypt').forEach(btn => btn.addEventListener('click', () => doEncrypt(btn.dataset.mode)));
 $$('.btn-decrypt').forEach(btn => btn.addEventListener('click', () => doDecrypt(btn.dataset.mode)));
+
+// ─── Connection Panel buttons ───
+$('#cp-copy-pk').addEventListener('click', () => {
+  const full = $('#cp-pubkey').dataset.full;
+  if (full) navigator.clipboard.writeText(full).then(() => { $('#cp-copy-pk').textContent = '✓'; setTimeout(() => $('#cp-copy-pk').textContent = '📋', 1500); });
+});
+$('#cp-forget').addEventListener('click', forgetSession);
+$('#cp-reconnect').addEventListener('click', autoReconnect);
+
+// ─── Auto-reconnect ───
+function autoReconnect() {
+  const sess = loadSession();
+  if (!sess) return;
+  cleanup46();
+
+  const { clientSecretKey, clientPubkey, remotePubkey, relay, flow, connectedAt } = sess;
+  const sk = hexToBytes(clientSecretKey);
+  const pk = clientPubkey;
+  const connId = flow === 'bunker' ? 'conn-bunker' : 'conn-client';
+
+  // Switch to the right flow tab
+  $$('.flow-btn').forEach(b => b.classList.remove('active'));
+  $$('.flow-panel').forEach(p => p.classList.remove('active'));
+  $(`.flow-btn[data-flow="${flow}"]`)?.classList.add('active');
+  $(`#flow-${flow}`)?.classList.add('active');
+
+  const ws = new WebSocket(relay);
+  nip46 = { sk, pk, remotePubkey, ws, connected: false, pending: {}, flow, relay, connectedAt };
+  updateConnPanel();
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify(['REQ', 'nip46', { kinds: [24133], '#p': [pk], since: Math.floor(Date.now() / 1000) - 5 }]));
+    // Send connect request
+    const req = makeReq('connect', [pk, '']);
+    const content = nip44encrypt(JSON.stringify(req), getConversationKey(sk, remotePubkey));
+    const event = finalizeEvent({ kind: 24133, created_at: Math.floor(Date.now() / 1000), tags: [['p', remotePubkey]], content }, sk);
+    const timeout = setTimeout(() => {
+      if (nip46?.pending[req.id]) {
+        delete nip46.pending[req.id];
+        nip46.connected = false;
+        updateConnPanel();
+        connStatusEl(connId, 'Reconnect timed out', 'error');
+      }
+    }, 30000);
+    nip46.pending[req.id] = {
+      resolve: () => {
+        clearTimeout(timeout);
+        nip46.connected = true;
+        connStatusEl(connId, 'Reconnected ✓', 'connected');
+        if (flow === 'bunker') $('#disconnectBunkerBtn').classList.remove('hidden');
+        else $('#disconnectClientBtn').classList.remove('hidden');
+        onNip46Connected();
+      },
+      reject: (e) => {
+        clearTimeout(timeout);
+        nip46.connected = false;
+        updateConnPanel();
+        connStatusEl(connId, 'Reconnect rejected: ' + e.message, 'error');
+      },
+      timeout
+    };
+    ws.send(JSON.stringify(['EVENT', event]));
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg[0] === 'EVENT' && msg[2]?.kind === 24133 && msg[2].pubkey === nip46?.remotePubkey) handleResponse(msg[2]);
+    } catch {}
+  };
+  ws.onerror = () => { connStatusEl(connId, 'WebSocket error during reconnect', 'error'); updateConnPanel(); };
+  ws.onclose = () => {
+    if (nip46) { nip46.connected = false; updateConnPanel(); connStatusEl(connId, 'Disconnected', 'error'); updateUI(); }
+  };
+}
+
+// ─── Auto-reconnect on page load ───
+const storedSession = loadSession();
+if (storedSession) {
+  // Switch to NIP-46 tab
+  $$('.tab-btn').forEach(b => b.classList.remove('active'));
+  $$('.tab-panel').forEach(p => p.classList.remove('active'));
+  $(`.tab-btn[data-tab="nip46"]`).classList.add('active');
+  $('#panel-nip46').classList.add('active');
+  updateConnPanel();
+  autoReconnect();
+}
 
 setTimeout(updateUI, 500);
 </script>
