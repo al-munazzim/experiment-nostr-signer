@@ -3,39 +3,62 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NIP-07 Encrypt / Decrypt POC</title>
+<title>Nostr Encrypt / Decrypt POC</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; background: #fafafa; }
 h1 { font-size: 1.4rem; margin-bottom: .5rem; }
 p.sub { color: #666; margin-bottom: 1.5rem; font-size: .9rem; }
 label { display: block; font-weight: 600; margin: 1rem 0 .3rem; font-size: .85rem; }
-input, textarea { width: 100%; padding: .5rem; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: .85rem; }
+input, textarea, select { width: 100%; padding: .5rem; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: .85rem; }
 textarea { height: 100px; resize: vertical; }
 .buttons { display: flex; gap: .5rem; margin: 1rem 0; }
 button { padding: .5rem 1.2rem; border: none; border-radius: 4px; cursor: pointer; font-size: .9rem; font-weight: 600; }
 #encryptBtn { background: #4a90d9; color: #fff; }
 #decryptBtn { background: #5cb85c; color: #fff; }
+#connectBtn { background: #e67e22; color: #fff; }
 button:hover { opacity: .85; }
+button:disabled { opacity: .5; cursor: not-allowed; }
 #status { margin-top: 1rem; padding: .6rem; border-radius: 4px; font-size: .85rem; display: none; }
 #status.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
 #status.ok { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
 #status.warn { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
 #nostr-warning { background: #fdd; color: #a00; border: 1px solid #e99; padding: .8rem; border-radius: 4px; margin-bottom: 1rem; }
+#nip46-section { margin-bottom: 1rem; }
+#nip46-section input { margin-bottom: .5rem; }
+#conn-status { font-size: .8rem; padding: .4rem .6rem; border-radius: 4px; margin-bottom: .5rem; display: none; }
+#conn-status.connecting { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
+#conn-status.connected { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
+#conn-status.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
+.hidden { display: none !important; }
 </style>
 </head>
 <body>
-<h1>🔐 NIP-07 Encrypt / Decrypt</h1>
-<p class="sub">Encrypt &amp; decrypt via your browser signer extension.</p>
+<h1>🔐 Nostr Encrypt / Decrypt</h1>
+<p class="sub">Encrypt &amp; decrypt via NIP-07 extension or NIP-46 remote signer.</p>
 
-<label for="nip-select">Encryption Protocol</label>
-<select id="nip-select" style="width:100%;padding:.5rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem;margin-bottom:.5rem;">
-  <option value="nip04">NIP-04 (AES-256-CBC, legacy)</option>
-  <option value="nip44">NIP-44 (XChaCha20, recommended)</option>
+<label for="mode-select">Signing Mode</label>
+<select id="mode-select">
+  <option value="nip07-nip04">NIP-07 + NIP-04 (extension, legacy)</option>
+  <option value="nip07-nip44">NIP-07 + NIP-44 (extension, recommended)</option>
+  <option value="nip46">NIP-46 Remote Signer (bunker)</option>
 </select>
+
 <div id="nostr-warning" style="display:none">
   <strong>No NIP-07 signer detected.</strong><br>
-  Install a browser extension like <a href="https://github.com/nicehash/nos2x">nos2x</a>, <a href="https://getalby.com">Alby</a>, or another NIP-07 compatible signer.
+  Install a browser extension like <a href="https://github.com/nicehash/nos2x">nos2x</a> or <a href="https://getalby.com">Alby</a>.
+</div>
+
+<div id="nip46-section" class="hidden">
+  <label for="bunker-url">Bunker URL</label>
+  <input id="bunker-url" type="text" placeholder="bunker://<pubkey>?relay=wss://relay.example.com&secret=...">
+  <label for="nip46-enc">Payload Encryption</label>
+  <select id="nip46-enc">
+    <option value="nip04">NIP-04 (legacy)</option>
+    <option value="nip44">NIP-44 (recommended)</option>
+  </select>
+  <div id="conn-status"></div>
+  <button id="connectBtn" style="margin-top:.3rem">Connect to Bunker</button>
 </div>
 
 <label for="pubkey">Recipient Public Key (hex)</label>
@@ -54,7 +77,11 @@ button:hover { opacity: .85; }
 
 <div id="status"></div>
 
-<script>
+<script type="module">
+import { generateSecretKey, getPublicKey, finalizeEvent } from 'https://esm.sh/nostr-tools@2.10.4/pure';
+import { encrypt as nip44encrypt, decrypt as nip44decrypt, getConversationKey } from 'https://esm.sh/nostr-tools@2.10.4/nip44';
+import { bytesToHex, hexToBytes } from 'https://esm.sh/@noble/hashes@1.6.1/utils';
+
 const $ = id => document.getElementById(id);
 
 function status(msg, cls) {
@@ -63,66 +90,236 @@ function status(msg, cls) {
   el.className = cls;
 }
 
-function getProtocol() {
-  const nip = $('nip-select').value;
-  if (nip === 'nip44') {
-    if (!window.nostr || !window.nostr.nip44) return null;
-    return window.nostr.nip44;
-  }
-  if (!window.nostr || !window.nostr.nip04) return null;
-  return window.nostr.nip04;
+function connStatus(msg, cls) {
+  const el = $('conn-status');
+  el.textContent = msg;
+  el.className = cls;
 }
 
-function checkNostr() {
-  const proto = getProtocol();
-  if (!proto) {
-    const nip = $('nip-select').value.toUpperCase();
-    $('nostr-warning').style.display = 'block';
-    $('nostr-warning').innerHTML = '<strong>No ' + nip + ' signer detected.</strong><br>Install a NIP-07 extension like <a href="https://github.com/nicehash/nos2x">nos2x</a> or <a href="https://getalby.com">Alby</a>. Make sure it supports ' + nip + '.';
-    $('encryptBtn').disabled = true;
-    $('decryptBtn').disabled = true;
-    return false;
+// ─── NIP-46 Remote Signer ───
+
+let bunkerState = null; // { sk, pk, remotePubkey, relay, secret, ws, connected, pending }
+
+function parseBunkerUrl(url) {
+  // bunker://<remote-pubkey>?relay=wss://...&secret=...
+  const m = url.match(/^bunker:\/\/([0-9a-f]{64})\??(.*)$/i);
+  if (!m) throw new Error('Invalid bunker URL format');
+  const remotePubkey = m[1];
+  const params = new URLSearchParams(m[2]);
+  const relay = params.get('relay');
+  if (!relay) throw new Error('Bunker URL missing relay parameter');
+  const secret = params.get('secret') || '';
+  return { remotePubkey, relay, secret };
+}
+
+function makeNip46Request(method, params) {
+  return { id: crypto.randomUUID(), method, params };
+}
+
+async function sendNip46(request) {
+  if (!bunkerState || !bunkerState.connected) throw new Error('Not connected to bunker');
+  const s = bunkerState;
+  const content = nip44encrypt(JSON.stringify(request), getConversationKey(s.sk, s.remotePubkey));
+  const event = finalizeEvent({
+    kind: 24133,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [['p', s.remotePubkey]],
+    content
+  }, s.sk);
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      delete s.pending[request.id];
+      reject(new Error('NIP-46 request timed out (30s)'));
+    }, 30000);
+    s.pending[request.id] = { resolve, reject, timeout };
+    s.ws.send(JSON.stringify(['EVENT', event]));
+  });
+}
+
+function handleNip46Response(event) {
+  if (!bunkerState) return;
+  const s = bunkerState;
+  try {
+    const plain = nip44decrypt(event.content, getConversationKey(s.sk, s.remotePubkey));
+    const resp = JSON.parse(plain);
+    if (resp.id && s.pending[resp.id]) {
+      const p = s.pending[resp.id];
+      clearTimeout(p.timeout);
+      delete s.pending[resp.id];
+      if (resp.error) p.reject(new Error(resp.error));
+      else p.resolve(resp.result);
+    }
+  } catch (e) {
+    console.warn('NIP-46 response parse error:', e);
   }
+}
+
+async function connectBunker() {
+  const url = $('bunker-url').value.trim();
+  if (!url) { connStatus('Enter a bunker URL', 'error'); return; }
+
+  try {
+    const { remotePubkey, relay, secret } = parseBunkerUrl(url);
+    const sk = generateSecretKey();
+    const pk = getPublicKey(sk);
+
+    connStatus('Connecting to ' + relay + '…', 'connecting');
+
+    const ws = new WebSocket(relay);
+    bunkerState = { sk, pk, remotePubkey, relay, secret, ws, connected: false, pending: {} };
+
+    ws.onopen = () => {
+      // Subscribe to responses for our ephemeral pubkey
+      ws.send(JSON.stringify(['REQ', 'nip46', { kinds: [24133], '#p': [pk], since: Math.floor(Date.now() / 1000) - 5 }]));
+      // Send connect request
+      const req = makeNip46Request('connect', [pk, secret]);
+      const content = nip44encrypt(JSON.stringify(req), getConversationKey(sk, remotePubkey));
+      const event = finalizeEvent({
+        kind: 24133,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', remotePubkey]],
+        content
+      }, sk);
+
+      const timeout = setTimeout(() => {
+        if (bunkerState && bunkerState.pending[req.id]) {
+          delete bunkerState.pending[req.id];
+          connStatus('Connect timed out – check bunker URL and that the signer is online', 'error');
+        }
+      }, 30000);
+
+      bunkerState.pending[req.id] = {
+        resolve: (result) => {
+          clearTimeout(timeout);
+          bunkerState.connected = true;
+          connStatus('Connected to bunker ✓', 'connected');
+          updateUI();
+        },
+        reject: (err) => {
+          clearTimeout(timeout);
+          connStatus('Connect rejected: ' + err.message, 'error');
+        },
+        timeout
+      };
+
+      ws.send(JSON.stringify(['EVENT', event]));
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg[0] === 'EVENT' && msg[2] && msg[2].kind === 24133 && msg[2].pubkey === remotePubkey) {
+          handleNip46Response(msg[2]);
+        }
+      } catch {}
+    };
+
+    ws.onerror = () => connStatus('WebSocket error', 'error');
+    ws.onclose = () => {
+      if (bunkerState) {
+        bunkerState.connected = false;
+        connStatus('Disconnected from bunker', 'error');
+        updateUI();
+      }
+    };
+  } catch (e) {
+    connStatus(e.message, 'error');
+  }
+}
+
+// ─── UI Logic ───
+
+function getMode() { return $('mode-select').value; }
+
+function updateUI() {
+  const mode = getMode();
+  const isNip46 = mode === 'nip46';
+
+  // Toggle NIP-46 section
+  $('nip46-section').classList.toggle('hidden', !isNip46);
   $('nostr-warning').style.display = 'none';
-  $('encryptBtn').disabled = false;
-  $('decryptBtn').disabled = false;
-  return true;
+
+  if (isNip46) {
+    const connected = bunkerState && bunkerState.connected;
+    $('encryptBtn').disabled = !connected;
+    $('decryptBtn').disabled = !connected;
+  } else {
+    // NIP-07 mode
+    const nipVersion = mode === 'nip07-nip44' ? 'nip44' : 'nip04';
+    const proto = window.nostr && window.nostr[nipVersion];
+    if (!proto) {
+      $('nostr-warning').style.display = 'block';
+      $('nostr-warning').innerHTML = '<strong>No ' + nipVersion.toUpperCase() + ' signer detected.</strong><br>Install a NIP-07 extension like <a href="https://github.com/nicehash/nos2x">nos2x</a> or <a href="https://getalby.com">Alby</a>.';
+      $('encryptBtn').disabled = true;
+      $('decryptBtn').disabled = true;
+    } else {
+      $('encryptBtn').disabled = false;
+      $('decryptBtn').disabled = false;
+    }
+  }
 }
 
-setTimeout(checkNostr, 500);
-$('nip-select').addEventListener('change', checkNostr);
+$('mode-select').addEventListener('change', updateUI);
+$('connectBtn').addEventListener('click', connectBunker);
+setTimeout(updateUI, 500);
 
-$('encryptBtn').addEventListener('click', async () => {
-  if (!checkNostr()) return;
-  const proto = getProtocol();
+// ─── Encrypt / Decrypt ───
+
+async function doEncrypt() {
   const pubkey = $('pubkey').value.trim();
   const plaintext = $('plaintext').value;
   if (!pubkey || !plaintext) { status('Provide pubkey and plaintext.', 'error'); return; }
+
+  const mode = getMode();
   try {
-    status('Encrypting via ' + $('nip-select').value.toUpperCase() + '…', 'ok');
-    const ct = await proto.encrypt(pubkey, plaintext);
+    let ct;
+    if (mode === 'nip46') {
+      const enc = $('nip46-enc').value;
+      const method = enc === 'nip44' ? 'nip44_encrypt' : 'nip04_encrypt';
+      status('Encrypting via NIP-46 (' + enc.toUpperCase() + ')…', 'ok');
+      ct = await sendNip46(makeNip46Request(method, [pubkey, plaintext]));
+    } else {
+      const nipVersion = mode === 'nip07-nip44' ? 'nip44' : 'nip04';
+      const proto = window.nostr[nipVersion];
+      status('Encrypting via ' + nipVersion.toUpperCase() + '…', 'ok');
+      ct = await proto.encrypt(pubkey, plaintext);
+    }
     $('ciphertext').value = ct;
-    status('Encrypted OK (' + $('nip-select').value.toUpperCase() + ').', 'ok');
+    status('Encrypted OK.', 'ok');
   } catch (e) {
     status('Encrypt failed: ' + e.message, 'error');
   }
-});
+}
 
-$('decryptBtn').addEventListener('click', async () => {
-  if (!checkNostr()) return;
-  const proto = getProtocol();
+async function doDecrypt() {
   const pubkey = $('pubkey').value.trim();
   const ciphertext = $('ciphertext').value.trim();
   if (!pubkey || !ciphertext) { status('Provide pubkey and ciphertext.', 'error'); return; }
+
+  const mode = getMode();
   try {
-    status('Decrypting via ' + $('nip-select').value.toUpperCase() + '…', 'ok');
-    const pt = await proto.decrypt(pubkey, ciphertext);
+    let pt;
+    if (mode === 'nip46') {
+      const enc = $('nip46-enc').value;
+      const method = enc === 'nip44' ? 'nip44_decrypt' : 'nip04_decrypt';
+      status('Decrypting via NIP-46 (' + enc.toUpperCase() + ')…', 'ok');
+      pt = await sendNip46(makeNip46Request(method, [pubkey, ciphertext]));
+    } else {
+      const nipVersion = mode === 'nip07-nip44' ? 'nip44' : 'nip04';
+      const proto = window.nostr[nipVersion];
+      status('Decrypting via ' + nipVersion.toUpperCase() + '…', 'ok');
+      pt = await proto.decrypt(pubkey, ciphertext);
+    }
     $('plaintext').value = pt;
-    status('Decrypted OK (' + $('nip-select').value.toUpperCase() + ').', 'ok');
+    status('Decrypted OK.', 'ok');
   } catch (e) {
     status('Decrypt failed: ' + e.message, 'error');
   }
-});
+}
+
+$('encryptBtn').addEventListener('click', doEncrypt);
+$('decryptBtn').addEventListener('click', doDecrypt);
 </script>
 </body>
 </html>
