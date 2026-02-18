@@ -4,121 +4,224 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nostr Encrypt / Decrypt POC</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; background: #fafafa; }
-h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-p.sub { color: #666; margin-bottom: 1.5rem; font-size: .9rem; }
-label { display: block; font-weight: 600; margin: 1rem 0 .3rem; font-size: .85rem; }
+body { font-family: -apple-system, system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; color: #222; background: #fafafa; }
+h1 { font-size: 1.4rem; margin-bottom: .3rem; }
+p.sub { color: #666; margin-bottom: 1.2rem; font-size: .9rem; }
+
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 2px solid #ccc; margin-bottom: 1.2rem; }
+.tab-btn { padding: .6rem 1.2rem; border: 2px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; font-size: .9rem; font-weight: 600; background: #eee; color: #666; margin-bottom: -2px; }
+.tab-btn.active { background: #fff; color: #222; border-color: #ccc; border-bottom-color: #fff; }
+.tab-btn:hover:not(.active) { background: #e4e4e4; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Sub-tabs (NIP-46 flows) */
+.flow-tabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
+.flow-btn { padding: .4rem 1rem; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: .82rem; font-weight: 600; background: #f5f5f5; color: #555; }
+.flow-btn.active { background: #e67e22; color: #fff; border-color: #e67e22; }
+.flow-panel { display: none; }
+.flow-panel.active { display: block; }
+
+label { display: block; font-weight: 600; margin: .8rem 0 .25rem; font-size: .85rem; }
 input, textarea, select { width: 100%; padding: .5rem; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: .85rem; }
-textarea { height: 100px; resize: vertical; }
-.buttons { display: flex; gap: .5rem; margin: 1rem 0; }
+textarea { height: 90px; resize: vertical; }
+.buttons { display: flex; gap: .5rem; margin: .8rem 0; }
 button { padding: .5rem 1.2rem; border: none; border-radius: 4px; cursor: pointer; font-size: .9rem; font-weight: 600; }
-#encryptBtn { background: #4a90d9; color: #fff; }
-#decryptBtn { background: #5cb85c; color: #fff; }
-#connectBtn { background: #e67e22; color: #fff; }
 button:hover { opacity: .85; }
 button:disabled { opacity: .5; cursor: not-allowed; }
-#status { margin-top: 1rem; padding: .6rem; border-radius: 4px; font-size: .85rem; display: none; }
-#status.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
-#status.ok { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
-#status.warn { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
-#nostr-warning { background: #fdd; color: #a00; border: 1px solid #e99; padding: .8rem; border-radius: 4px; margin-bottom: 1rem; }
-#nip46-section { margin-bottom: 1rem; }
-#nip46-section input { margin-bottom: .5rem; }
-#conn-status { font-size: .8rem; padding: .4rem .6rem; border-radius: 4px; margin-bottom: .5rem; display: none; }
-#conn-status.connecting { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
-#conn-status.connected { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
-#conn-status.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
+.btn-encrypt { background: #4a90d9; color: #fff; }
+.btn-decrypt { background: #5cb85c; color: #fff; }
+.btn-connect { background: #e67e22; color: #fff; }
+.btn-generate { background: #8e44ad; color: #fff; }
+.btn-disconnect { background: #c0392b; color: #fff; font-size: .8rem; padding: .4rem .8rem; }
+
+.status-box { margin-top: .8rem; padding: .5rem; border-radius: 4px; font-size: .85rem; display: none; }
+.status-box.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
+.status-box.ok { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
+.status-box.warn { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
+
+.conn-status { font-size: .8rem; padding: .4rem .6rem; border-radius: 4px; margin-bottom: .5rem; display: none; }
+.conn-status.connecting { display: block; background: #ffe8c0; color: #855; border: 1px solid #dca; }
+.conn-status.connected { display: block; background: #dfd; color: #060; border: 1px solid #9c9; }
+.conn-status.error { display: block; background: #fdd; color: #a00; border: 1px solid #e99; }
+
+.warning-box { background: #fdd; color: #a00; border: 1px solid #e99; padding: .7rem; border-radius: 4px; margin-bottom: .8rem; font-size: .85rem; }
 .hidden { display: none !important; }
+.qr-box { text-align: center; margin: .8rem 0; }
+.qr-box canvas, .qr-box img { max-width: 220px; }
+.uri-display { word-break: break-all; font-size: .78rem; background: #f0f0f0; padding: .5rem; border-radius: 4px; margin: .5rem 0; font-family: monospace; user-select: all; }
+.nip46-enc-row { margin-bottom: .5rem; }
 </style>
 </head>
 <body>
 <h1>🔐 Nostr Encrypt / Decrypt</h1>
 <p class="sub">Encrypt &amp; decrypt via NIP-07 extension or NIP-46 remote signer.</p>
 
-<label for="mode-select">Signing Mode</label>
-<select id="mode-select">
-  <option value="nip07-nip04">NIP-07 + NIP-04 (extension, legacy)</option>
-  <option value="nip07-nip44">NIP-07 + NIP-44 (extension, recommended)</option>
-  <option value="nip46">NIP-46 Remote Signer (bunker)</option>
-</select>
-
-<div id="nostr-warning" style="display:none">
-  <strong>No NIP-07 signer detected.</strong><br>
-  Install a browser extension like <a href="https://github.com/nicehash/nos2x">nos2x</a> or <a href="https://getalby.com">Alby</a>.
+<div class="tabs">
+  <div class="tab-btn active" data-tab="nip04">NIP-04</div>
+  <div class="tab-btn" data-tab="nip44">NIP-44</div>
+  <div class="tab-btn" data-tab="nip46">NIP-46</div>
 </div>
 
-<div id="nip46-section" class="hidden">
-  <label for="bunker-url">Bunker URL</label>
-  <input id="bunker-url" type="text" placeholder="bunker://<pubkey>?relay=wss://relay.example.com&secret=...">
-  <label for="nip46-enc">Payload Encryption</label>
-  <select id="nip46-enc">
-    <option value="nip04">NIP-04 (legacy)</option>
-    <option value="nip44">NIP-44 (recommended)</option>
-  </select>
-  <div id="conn-status"></div>
-  <button id="connectBtn" style="margin-top:.3rem">Connect to Bunker</button>
+<!-- NIP-04 Tab -->
+<div class="tab-panel active" id="panel-nip04">
+  <div id="warn-nip04" class="warning-box hidden">
+    <strong>No NIP-04 signer detected.</strong><br>
+    Install a NIP-07 extension like <a href="https://getalby.com">Alby</a> or <a href="https://github.com/nicehash/nos2x">nos2x</a>.
+  </div>
+  <label>Recipient Public Key (hex)</label>
+  <input class="pubkey-input" data-mode="nip04" placeholder="64-char hex pubkey of the other party">
+  <label>Plaintext</label>
+  <textarea class="plain-input" data-mode="nip04" placeholder="Message to encrypt..."></textarea>
+  <div class="buttons">
+    <button class="btn-encrypt" data-mode="nip04">Encrypt ↓</button>
+    <button class="btn-decrypt" data-mode="nip04">Decrypt ↑</button>
+  </div>
+  <label>Ciphertext</label>
+  <textarea class="cipher-input" data-mode="nip04" placeholder="Encrypted payload appears here..."></textarea>
+  <div class="status-box" data-mode="nip04"></div>
 </div>
 
-<label for="pubkey">Recipient Public Key (hex)</label>
-<input id="pubkey" type="text" placeholder="64-char hex pubkey of the other party">
-
-<label for="plaintext">Plaintext</label>
-<textarea id="plaintext" placeholder="Message to encrypt..."></textarea>
-
-<div class="buttons">
-  <button id="encryptBtn">Encrypt ↓</button>
-  <button id="decryptBtn">Decrypt ↑</button>
+<!-- NIP-44 Tab -->
+<div class="tab-panel" id="panel-nip44">
+  <div id="warn-nip44" class="warning-box hidden">
+    <strong>No NIP-44 signer detected.</strong><br>
+    Install a NIP-07 extension with NIP-44 support.
+  </div>
+  <label>Recipient Public Key (hex)</label>
+  <input class="pubkey-input" data-mode="nip44" placeholder="64-char hex pubkey of the other party">
+  <label>Plaintext</label>
+  <textarea class="plain-input" data-mode="nip44" placeholder="Message to encrypt..."></textarea>
+  <div class="buttons">
+    <button class="btn-encrypt" data-mode="nip44">Encrypt ↓</button>
+    <button class="btn-decrypt" data-mode="nip44">Decrypt ↑</button>
+  </div>
+  <label>Ciphertext</label>
+  <textarea class="cipher-input" data-mode="nip44" placeholder="Encrypted payload appears here..."></textarea>
+  <div class="status-box" data-mode="nip44"></div>
 </div>
 
-<label for="ciphertext">Ciphertext</label>
-<textarea id="ciphertext" placeholder="Encrypted payload appears here..."></textarea>
+<!-- NIP-46 Tab -->
+<div class="tab-panel" id="panel-nip46">
+  <div class="flow-tabs">
+    <div class="flow-btn active" data-flow="bunker">Signer-initiated (bunker://)</div>
+    <div class="flow-btn" data-flow="client">Client-initiated (nostrconnect://)</div>
+  </div>
 
-<div id="status"></div>
+  <!-- Bunker flow -->
+  <div class="flow-panel active" id="flow-bunker">
+    <label>Bunker URL</label>
+    <input id="bunker-url" type="text" placeholder="bunker://<pubkey>?relay=wss://relay.example.com&secret=...">
+    <div class="conn-status" id="conn-bunker"></div>
+    <button class="btn-connect" id="connectBunkerBtn" style="margin-top:.4rem">Connect to Bunker</button>
+    <button class="btn-disconnect hidden" id="disconnectBunkerBtn" style="margin-top:.4rem">Disconnect</button>
+  </div>
+
+  <!-- Client-initiated flow -->
+  <div class="flow-panel" id="flow-client">
+    <label>Relay</label>
+    <input id="client-relay" type="text" value="wss://relay.damus.io" placeholder="wss://relay.example.com">
+    <button class="btn-generate" id="generateBtn" style="margin-top:.5rem">Generate nostrconnect:// URI</button>
+    <button class="btn-disconnect hidden" id="disconnectClientBtn" style="margin-top:.4rem">Disconnect</button>
+    <div id="nostrconnect-display" class="hidden">
+      <label>Scan or paste this URI in your signer:</label>
+      <div class="uri-display" id="nostrconnect-uri"></div>
+      <div class="qr-box" id="nostrconnect-qr"></div>
+    </div>
+    <div class="conn-status" id="conn-client"></div>
+  </div>
+
+  <div class="nip46-enc-row">
+    <label>Payload Encryption</label>
+    <select id="nip46-enc">
+      <option value="nip04">NIP-04 (legacy)</option>
+      <option value="nip44">NIP-44 (recommended)</option>
+    </select>
+  </div>
+
+  <label>Recipient Public Key (hex)</label>
+  <input class="pubkey-input" data-mode="nip46" placeholder="64-char hex pubkey of the other party">
+  <label>Plaintext</label>
+  <textarea class="plain-input" data-mode="nip46" placeholder="Message to encrypt..."></textarea>
+  <div class="buttons">
+    <button class="btn-encrypt" data-mode="nip46">Encrypt ↓</button>
+    <button class="btn-decrypt" data-mode="nip46">Decrypt ↑</button>
+  </div>
+  <label>Ciphertext</label>
+  <textarea class="cipher-input" data-mode="nip46" placeholder="Encrypted payload appears here..."></textarea>
+  <div class="status-box" data-mode="nip46"></div>
+</div>
 
 <script type="module">
 import { generateSecretKey, getPublicKey, finalizeEvent } from 'https://esm.sh/nostr-tools@2.10.4/pure';
 import { encrypt as nip44encrypt, decrypt as nip44decrypt, getConversationKey } from 'https://esm.sh/nostr-tools@2.10.4/nip44';
 import { bytesToHex, hexToBytes } from 'https://esm.sh/@noble/hashes@1.6.1/utils';
 
-const $ = id => document.getElementById(id);
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 
-function status(msg, cls) {
-  const el = $('status');
-  el.textContent = msg;
-  el.className = cls;
+// ─── Tab switching ───
+$$('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+  $$('.tab-btn').forEach(b => b.classList.remove('active'));
+  $$('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  $('#panel-' + btn.dataset.tab).classList.add('active');
+  updateUI();
+}));
+
+$$('.flow-btn').forEach(btn => btn.addEventListener('click', () => {
+  $$('.flow-btn').forEach(b => b.classList.remove('active'));
+  $$('.flow-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  $('#flow-' + btn.dataset.flow).classList.add('active');
+  updateUI();
+}));
+
+function activeTab() {
+  return $('.tab-btn.active')?.dataset.tab || 'nip04';
 }
 
-function connStatus(msg, cls) {
-  const el = $('conn-status');
-  el.textContent = msg;
-  el.className = cls;
+function activeFlow() {
+  return $('.flow-btn.active')?.dataset.flow || 'bunker';
 }
 
-// ─── NIP-46 Remote Signer ───
-
-let bunkerState = null; // { sk, pk, remotePubkey, relay, secret, ws, connected, pending }
-
-function parseBunkerUrl(url) {
-  // bunker://<remote-pubkey>?relay=wss://...&secret=...
-  const m = url.match(/^bunker:\/\/([0-9a-f]{64})\??(.*)$/i);
-  if (!m) throw new Error('Invalid bunker URL format');
-  const remotePubkey = m[1];
-  const params = new URLSearchParams(m[2]);
-  const relay = params.get('relay');
-  if (!relay) throw new Error('Bunker URL missing relay parameter');
-  const secret = params.get('secret') || '';
-  return { remotePubkey, relay, secret };
+function statusFor(mode, msg, cls) {
+  const el = $(`.status-box[data-mode="${mode}"]`);
+  if (el) { el.textContent = msg; el.className = 'status-box ' + cls; }
 }
 
-function makeNip46Request(method, params) {
+function connStatusEl(id, msg, cls) {
+  const el = $('#' + id);
+  if (el) { el.textContent = msg; el.className = 'conn-status ' + cls; }
+}
+
+// ─── NIP-46 State ───
+let nip46 = null; // { sk, pk, remotePubkey, ws, connected, pending, flow }
+
+function cleanup46() {
+  if (nip46) {
+    if (nip46.ws) try { nip46.ws.close(); } catch {}
+    nip46 = null;
+  }
+  connStatusEl('conn-bunker', '', '');
+  connStatusEl('conn-client', '', '');
+  $('#disconnectBunkerBtn').classList.add('hidden');
+  $('#disconnectClientBtn').classList.add('hidden');
+  $('#nostrconnect-display').classList.add('hidden');
+  updateUI();
+}
+
+function makeReq(method, params) {
   return { id: crypto.randomUUID(), method, params };
 }
 
 async function sendNip46(request) {
-  if (!bunkerState || !bunkerState.connected) throw new Error('Not connected to bunker');
-  const s = bunkerState;
+  if (!nip46 || !nip46.connected) throw new Error('Not connected');
+  const s = nip46;
   const content = nip44encrypt(JSON.stringify(request), getConversationKey(s.sk, s.remotePubkey));
   const event = finalizeEvent({
     kind: 24133,
@@ -128,18 +231,15 @@ async function sendNip46(request) {
   }, s.sk);
 
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      delete s.pending[request.id];
-      reject(new Error('NIP-46 request timed out (30s)'));
-    }, 30000);
+    const timeout = setTimeout(() => { delete s.pending[request.id]; reject(new Error('NIP-46 request timed out (30s)')); }, 30000);
     s.pending[request.id] = { resolve, reject, timeout };
     s.ws.send(JSON.stringify(['EVENT', event]));
   });
 }
 
-function handleNip46Response(event) {
-  if (!bunkerState) return;
-  const s = bunkerState;
+function handleResponse(event) {
+  if (!nip46) return;
+  const s = nip46;
   try {
     const plain = nip44decrypt(event.content, getConversationKey(s.sk, s.remotePubkey));
     const resp = JSON.parse(plain);
@@ -150,176 +250,215 @@ function handleNip46Response(event) {
       if (resp.error) p.reject(new Error(resp.error));
       else p.resolve(resp.result);
     }
-  } catch (e) {
-    console.warn('NIP-46 response parse error:', e);
-  }
+  } catch (e) { console.warn('NIP-46 parse error:', e); }
 }
 
-async function connectBunker() {
-  const url = $('bunker-url').value.trim();
-  if (!url) { connStatus('Enter a bunker URL', 'error'); return; }
+// ─── Bunker flow (signer-initiated) ───
+function parseBunkerUrl(url) {
+  const m = url.match(/^bunker:\/\/([0-9a-f]{64})\??(.*)$/i);
+  if (!m) throw new Error('Invalid bunker URL');
+  const params = new URLSearchParams(m[2]);
+  const relay = params.get('relay');
+  if (!relay) throw new Error('Missing relay param');
+  return { remotePubkey: m[1], relay, secret: params.get('secret') || '' };
+}
 
+function connectBunker() {
+  cleanup46();
+  const url = $('#bunker-url').value.trim();
+  if (!url) { connStatusEl('conn-bunker', 'Enter a bunker URL', 'error'); return; }
   try {
     const { remotePubkey, relay, secret } = parseBunkerUrl(url);
     const sk = generateSecretKey();
     const pk = getPublicKey(sk);
+    const connId = 'conn-bunker';
 
-    connStatus('Connecting to ' + relay + '…', 'connecting');
-
+    connStatusEl(connId, 'Connecting to ' + relay + '…', 'connecting');
     const ws = new WebSocket(relay);
-    bunkerState = { sk, pk, remotePubkey, relay, secret, ws, connected: false, pending: {} };
+    nip46 = { sk, pk, remotePubkey, ws, connected: false, pending: {}, flow: 'bunker' };
 
     ws.onopen = () => {
-      // Subscribe to responses for our ephemeral pubkey
       ws.send(JSON.stringify(['REQ', 'nip46', { kinds: [24133], '#p': [pk], since: Math.floor(Date.now() / 1000) - 5 }]));
-      // Send connect request
-      const req = makeNip46Request('connect', [pk, secret]);
+      const req = makeReq('connect', [pk, secret]);
       const content = nip44encrypt(JSON.stringify(req), getConversationKey(sk, remotePubkey));
-      const event = finalizeEvent({
-        kind: 24133,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [['p', remotePubkey]],
-        content
-      }, sk);
-
+      const event = finalizeEvent({ kind: 24133, created_at: Math.floor(Date.now() / 1000), tags: [['p', remotePubkey]], content }, sk);
       const timeout = setTimeout(() => {
-        if (bunkerState && bunkerState.pending[req.id]) {
-          delete bunkerState.pending[req.id];
-          connStatus('Connect timed out – check bunker URL and that the signer is online', 'error');
-        }
+        if (nip46?.pending[req.id]) { delete nip46.pending[req.id]; connStatusEl(connId, 'Connect timed out', 'error'); }
       }, 30000);
-
-      bunkerState.pending[req.id] = {
-        resolve: (result) => {
-          clearTimeout(timeout);
-          bunkerState.connected = true;
-          connStatus('Connected to bunker ✓', 'connected');
-          updateUI();
-        },
-        reject: (err) => {
-          clearTimeout(timeout);
-          connStatus('Connect rejected: ' + err.message, 'error');
-        },
+      nip46.pending[req.id] = {
+        resolve: () => { clearTimeout(timeout); nip46.connected = true; connStatusEl(connId, 'Connected ✓', 'connected'); $('#disconnectBunkerBtn').classList.remove('hidden'); updateUI(); },
+        reject: (e) => { clearTimeout(timeout); connStatusEl(connId, 'Rejected: ' + e.message, 'error'); },
         timeout
       };
-
       ws.send(JSON.stringify(['EVENT', event]));
     };
 
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        if (msg[0] === 'EVENT' && msg[2] && msg[2].kind === 24133 && msg[2].pubkey === remotePubkey) {
-          handleNip46Response(msg[2]);
-        }
+        if (msg[0] === 'EVENT' && msg[2]?.kind === 24133 && msg[2].pubkey === nip46?.remotePubkey) handleResponse(msg[2]);
       } catch {}
     };
+    ws.onerror = () => connStatusEl(connId, 'WebSocket error', 'error');
+    ws.onclose = () => { if (nip46?.flow === 'bunker') { nip46.connected = false; connStatusEl(connId, 'Disconnected', 'error'); updateUI(); } };
+  } catch (e) { connStatusEl('conn-bunker', e.message, 'error'); }
+}
 
-    ws.onerror = () => connStatus('WebSocket error', 'error');
-    ws.onclose = () => {
-      if (bunkerState) {
-        bunkerState.connected = false;
-        connStatus('Disconnected from bunker', 'error');
-        updateUI();
-      }
-    };
+// ─── Client-initiated flow (nostrconnect://) ───
+function generateNostrConnect() {
+  cleanup46();
+  const relay = $('#client-relay').value.trim();
+  if (!relay) { connStatusEl('conn-client', 'Enter a relay URL', 'error'); return; }
+
+  const sk = generateSecretKey();
+  const pk = getPublicKey(sk);
+  const secret = bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
+  const connId = 'conn-client';
+
+  const uri = `nostrconnect://${pk}?relay=${encodeURIComponent(relay)}&secret=${secret}&name=Nostr+Signer+POC`;
+
+  // Show URI + QR
+  $('#nostrconnect-uri').textContent = uri;
+  $('#nostrconnect-display').classList.remove('hidden');
+
+  // Generate QR
+  const qrDiv = $('#nostrconnect-qr');
+  qrDiv.innerHTML = '';
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(uri);
+    qr.make();
+    qrDiv.innerHTML = qr.createSvgTag(4, 0);
   } catch (e) {
-    connStatus(e.message, 'error');
+    qrDiv.textContent = '(QR generation failed)';
   }
-}
 
-// ─── UI Logic ───
+  connStatusEl(connId, 'Waiting for signer to connect…', 'connecting');
 
-function getMode() { return $('mode-select').value; }
+  const ws = new WebSocket(relay);
+  nip46 = { sk, pk, remotePubkey: null, ws, connected: false, pending: {}, flow: 'client', secret };
 
-function updateUI() {
-  const mode = getMode();
-  const isNip46 = mode === 'nip46';
+  ws.onopen = () => {
+    ws.send(JSON.stringify(['REQ', 'nip46', { kinds: [24133], '#p': [pk], since: Math.floor(Date.now() / 1000) - 5 }]));
+  };
 
-  // Toggle NIP-46 section
-  $('nip46-section').classList.toggle('hidden', !isNip46);
-  $('nostr-warning').style.display = 'none';
-
-  if (isNip46) {
-    const connected = bunkerState && bunkerState.connected;
-    $('encryptBtn').disabled = !connected;
-    $('decryptBtn').disabled = !connected;
-  } else {
-    // NIP-07 mode
-    const nipVersion = mode === 'nip07-nip44' ? 'nip44' : 'nip04';
-    const proto = window.nostr && window.nostr[nipVersion];
-    if (!proto) {
-      $('nostr-warning').style.display = 'block';
-      $('nostr-warning').innerHTML = '<strong>No ' + nipVersion.toUpperCase() + ' signer detected.</strong><br>Install a NIP-07 extension like <a href="https://github.com/nicehash/nos2x">nos2x</a> or <a href="https://getalby.com">Alby</a>.';
-      $('encryptBtn').disabled = true;
-      $('decryptBtn').disabled = true;
-    } else {
-      $('encryptBtn').disabled = false;
-      $('decryptBtn').disabled = false;
+  const connectTimeout = setTimeout(() => {
+    if (nip46 && !nip46.connected) {
+      connStatusEl(connId, 'Timed out waiting for signer (60s)', 'error');
     }
-  }
+  }, 60000);
+
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg[0] !== 'EVENT' || msg[2]?.kind !== 24133) return;
+      const evt = msg[2];
+
+      if (!nip46.connected) {
+        // Try to decrypt with the event author as remotePubkey
+        try {
+          const plain = nip44decrypt(evt.content, getConversationKey(sk, evt.pubkey));
+          const resp = JSON.parse(plain);
+          // The connect response: method should be absent (it's a response), and result should be the secret or "ack"
+          // According to NIP-46: signer sends response with id matching... but for client-initiated,
+          // the signer sends a response event. We validate the secret.
+          if (resp.result === secret || resp.result === 'ack' || resp.result === 'ACK' || resp.id) {
+            clearTimeout(connectTimeout);
+            nip46.remotePubkey = evt.pubkey;
+            nip46.connected = true;
+            connStatusEl(connId, 'Connected to signer ✓ (pubkey: ' + evt.pubkey.slice(0, 12) + '…)', 'connected');
+            $('#disconnectClientBtn').classList.remove('hidden');
+            updateUI();
+            return;
+          }
+        } catch {}
+      } else if (evt.pubkey === nip46.remotePubkey) {
+        handleResponse(evt);
+      }
+    } catch {}
+  };
+
+  ws.onerror = () => { clearTimeout(connectTimeout); connStatusEl(connId, 'WebSocket error', 'error'); };
+  ws.onclose = () => {
+    clearTimeout(connectTimeout);
+    if (nip46?.flow === 'client') { nip46.connected = false; connStatusEl(connId, 'Disconnected', 'error'); updateUI(); }
+  };
 }
 
-$('mode-select').addEventListener('change', updateUI);
-$('connectBtn').addEventListener('click', connectBunker);
-setTimeout(updateUI, 500);
+// ─── UI ───
+function updateUI() {
+  const tab = activeTab();
+
+  // NIP-04/44 warnings
+  ['nip04', 'nip44'].forEach(m => {
+    const proto = window.nostr?.[m];
+    const warn = $(`#warn-${m}`);
+    if (warn) warn.classList.toggle('hidden', !!proto);
+  });
+
+  // Button states
+  $$('.btn-encrypt, .btn-decrypt').forEach(btn => {
+    const mode = btn.dataset.mode;
+    if (mode === 'nip46') {
+      btn.disabled = !nip46?.connected;
+    } else {
+      btn.disabled = !window.nostr?.[mode];
+    }
+  });
+}
+
+$('#connectBunkerBtn').addEventListener('click', connectBunker);
+$('#generateBtn').addEventListener('click', generateNostrConnect);
+$('#disconnectBunkerBtn').addEventListener('click', cleanup46);
+$('#disconnectClientBtn').addEventListener('click', cleanup46);
 
 // ─── Encrypt / Decrypt ───
+async function doEncrypt(mode) {
+  const pk = $(`.pubkey-input[data-mode="${mode}"]`).value.trim();
+  const pt = $(`.plain-input[data-mode="${mode}"]`).value;
+  if (!pk || !pt) { statusFor(mode, 'Provide pubkey and plaintext.', 'error'); return; }
 
-async function doEncrypt() {
-  const pubkey = $('pubkey').value.trim();
-  const plaintext = $('plaintext').value;
-  if (!pubkey || !plaintext) { status('Provide pubkey and plaintext.', 'error'); return; }
-
-  const mode = getMode();
   try {
     let ct;
     if (mode === 'nip46') {
-      const enc = $('nip46-enc').value;
+      const enc = $('#nip46-enc').value;
       const method = enc === 'nip44' ? 'nip44_encrypt' : 'nip04_encrypt';
-      status('Encrypting via NIP-46 (' + enc.toUpperCase() + ')…', 'ok');
-      ct = await sendNip46(makeNip46Request(method, [pubkey, plaintext]));
+      statusFor(mode, 'Encrypting via NIP-46 (' + enc.toUpperCase() + ')…', 'ok');
+      ct = await sendNip46(makeReq(method, [pk, pt]));
     } else {
-      const nipVersion = mode === 'nip07-nip44' ? 'nip44' : 'nip04';
-      const proto = window.nostr[nipVersion];
-      status('Encrypting via ' + nipVersion.toUpperCase() + '…', 'ok');
-      ct = await proto.encrypt(pubkey, plaintext);
+      statusFor(mode, 'Encrypting via ' + mode.toUpperCase() + '…', 'ok');
+      ct = await window.nostr[mode].encrypt(pk, pt);
     }
-    $('ciphertext').value = ct;
-    status('Encrypted OK.', 'ok');
-  } catch (e) {
-    status('Encrypt failed: ' + e.message, 'error');
-  }
+    $(`.cipher-input[data-mode="${mode}"]`).value = ct;
+    statusFor(mode, 'Encrypted OK.', 'ok');
+  } catch (e) { statusFor(mode, 'Encrypt failed: ' + e.message, 'error'); }
 }
 
-async function doDecrypt() {
-  const pubkey = $('pubkey').value.trim();
-  const ciphertext = $('ciphertext').value.trim();
-  if (!pubkey || !ciphertext) { status('Provide pubkey and ciphertext.', 'error'); return; }
+async function doDecrypt(mode) {
+  const pk = $(`.pubkey-input[data-mode="${mode}"]`).value.trim();
+  const ct = $(`.cipher-input[data-mode="${mode}"]`).value.trim();
+  if (!pk || !ct) { statusFor(mode, 'Provide pubkey and ciphertext.', 'error'); return; }
 
-  const mode = getMode();
   try {
     let pt;
     if (mode === 'nip46') {
-      const enc = $('nip46-enc').value;
+      const enc = $('#nip46-enc').value;
       const method = enc === 'nip44' ? 'nip44_decrypt' : 'nip04_decrypt';
-      status('Decrypting via NIP-46 (' + enc.toUpperCase() + ')…', 'ok');
-      pt = await sendNip46(makeNip46Request(method, [pubkey, ciphertext]));
+      statusFor(mode, 'Decrypting via NIP-46 (' + enc.toUpperCase() + ')…', 'ok');
+      pt = await sendNip46(makeReq(method, [pk, ct]));
     } else {
-      const nipVersion = mode === 'nip07-nip44' ? 'nip44' : 'nip04';
-      const proto = window.nostr[nipVersion];
-      status('Decrypting via ' + nipVersion.toUpperCase() + '…', 'ok');
-      pt = await proto.decrypt(pubkey, ciphertext);
+      statusFor(mode, 'Decrypting via ' + mode.toUpperCase() + '…', 'ok');
+      pt = await window.nostr[mode].decrypt(pk, ct);
     }
-    $('plaintext').value = pt;
-    status('Decrypted OK.', 'ok');
-  } catch (e) {
-    status('Decrypt failed: ' + e.message, 'error');
-  }
+    $(`.plain-input[data-mode="${mode}"]`).value = pt;
+    statusFor(mode, 'Decrypted OK.', 'ok');
+  } catch (e) { statusFor(mode, 'Decrypt failed: ' + e.message, 'error'); }
 }
 
-$('encryptBtn').addEventListener('click', doEncrypt);
-$('decryptBtn').addEventListener('click', doDecrypt);
+$$('.btn-encrypt').forEach(btn => btn.addEventListener('click', () => doEncrypt(btn.dataset.mode)));
+$$('.btn-decrypt').forEach(btn => btn.addEventListener('click', () => doDecrypt(btn.dataset.mode)));
+
+setTimeout(updateUI, 500);
 </script>
 </body>
 </html>
